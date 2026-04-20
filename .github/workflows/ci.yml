@@ -11,12 +11,6 @@ on:
 permissions:
   contents: read
 
-env:
-  # We can't run a step 'if secrets.FOO != ""' but we can run a step
-  # 'if env.FOO' != ""', so we copy secrets to env vars for conditional checks.
-  DOCKER_USR: ${{ secrets.DOCKER_USR }}
-  UPBOUND_MARKETPLACE_PUSH_ROBOT_USR: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }}
-  AWS_USR: ${{ secrets.AWS_USR }}
 
 jobs:
   check-diff:
@@ -29,11 +23,6 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
 
-      - name: Setup Cachix
-        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
-        with:
-          name: crossplane
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Verify Generated Code
         run: nix build .#checks.x86_64-linux.generate --print-build-logs
@@ -48,11 +37,6 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
 
-      - name: Setup Cachix
-        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
-        with:
-          name: crossplane
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Lint
         run: nix build .#checks.x86_64-linux.go-lint .#checks.x86_64-linux.helm-lint --print-build-logs
@@ -70,11 +54,6 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
 
-      - name: Setup Cachix
-        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
-        with:
-          name: crossplane
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Setup Nix Environment
         uses: nicknovitski/nix-develop@9be7cfb4b10451d3390a75dc18ad0465bed4932a # v1
@@ -97,21 +76,10 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
 
-      - name: Setup Cachix
-        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
-        with:
-          name: crossplane
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Run Unit Tests
         run: nix build .#checks.x86_64-linux.test --print-build-logs
 
-      - name: Publish Unit Test Coverage
-        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5
-        with:
-          flags: unittests
-          file: result/coverage.txt
-          token: ${{ secrets.CODECOV_TOKEN }}
 
   # E2E tests run outside the Nix sandbox (needs Docker)
   e2e-tests:
@@ -150,11 +118,6 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
 
-      - name: Setup Cachix
-        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
-        with:
-          name: crossplane
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Set CROSSPLANE_PRIOR_VERSION
         if: startsWith(github.ref, 'refs/heads/release-') || startsWith(github.base_ref, 'release-')
@@ -187,15 +150,6 @@ jobs:
               --test-suite ${{ matrix.test-suite }} \
               -labels area=${{ matrix.test-area }}
 
-      - name: Publish E2E Test Flakes
-        if: '!cancelled()'
-        uses: buildpulse/buildpulse-action@d4d8e00c645a2e3db0419a43664bbcf868080234 # v0.12.0
-        with:
-          account: 45158470
-          repository: 147886080
-          key: ${{ secrets.BUILDPULSE_ACCESS_KEY_ID }}
-          secret: ${{ secrets.BUILDPULSE_SECRET_ACCESS_KEY }}
-          path: /tmp/e2e-tests.xml
 
       - name: Upload E2E Test Artifacts
         if: '!cancelled()'
@@ -231,11 +185,6 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
 
-      - name: Setup Cachix
-        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
-        with:
-          name: crossplane
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       # Set buildVersion in flake.nix. The version is an input to the build.
       # Pure (sandboxed, reproducible) Nix build inputs can only come from git
@@ -255,21 +204,6 @@ jobs:
           name: output
           path: result/**
 
-      - name: Login to DockerHub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        if: env.DOCKER_USR != ''
-        with:
-          username: ${{ secrets.DOCKER_USR }}
-          password: ${{ secrets.DOCKER_PSW }}
-
-      - name: Login to Upbound
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        if: env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
-        with:
-          registry: xpkg.upbound.io
-          username: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }}
-          password: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_PSW }}
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -277,33 +211,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push Images to DockerHub
-        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-')) && env.DOCKER_USR != ''
-        run: nix run --option warn-dirty false .#push-images -- crossplane/crossplane
-
-      - name: Push Images to Upbound
-        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-')) && env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
-        run: nix run --option warn-dirty false .#push-images -- xpkg.upbound.io/crossplane/crossplane
-
       - name: Push Images to GitHub Container Registry
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-')
-        run: nix run --option warn-dirty false .#push-images -- ghcr.io/crossplane/crossplane
+        run: nix run --option warn-dirty false .#push-images -- ghcr.io/${{ github.repository_owner }}/crossplane
 
-      - name: Push Artifacts to S3
-        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-')) && env.AWS_USR != ''
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_USR }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_PSW }}
-          AWS_DEFAULT_REGION: us-east-1
-        run: nix run --option warn-dirty false .#push-artifacts -- "${GITHUB_REF##*/}"
+      - name: Push Helm Chart to GitHub Container Registry
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-')
+        run: nix shell nixpkgs#kubernetes-helm -c helm push result/charts/crossplane-*.tgz oci://ghcr.io/${{ github.repository_owner }}
 
-      - name: Promote Artifacts to Master Channel
-        if: github.ref == 'refs/heads/main' && env.AWS_USR != ''
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_USR }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_PSW }}
-          AWS_DEFAULT_REGION: us-east-1
-        run: nix run --option warn-dirty false .#promote-artifacts -- main "$VERSION" master
 
   # Fuzz testing (unchanged from original)
   fuzz-test:
@@ -342,5 +257,4 @@ jobs:
       - name: Lint and Push Protocol Buffers
         uses: bufbuild/buf-action@8f4a1456a0ab6a1eb80ba68e53832e6fcfacc16c # v1
         with:
-          token: ${{ secrets.BUF_TOKEN }}
           pr_comment: false
