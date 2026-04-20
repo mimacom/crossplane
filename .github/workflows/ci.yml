@@ -217,7 +217,7 @@ jobs:
 
       - name: Push Helm Chart to GitHub Container Registry
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-')
-        run: nix shell nixpkgs#kubernetes-helm -c helm push result/charts/crossplane-*.tgz oci://ghcr.io/${{ github.repository_owner }}
+        run: nix shell nixpkgs#kubernetes-helm -c helm push result/charts/crossplane-*.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
 
 
   # Fuzz testing (unchanged from original)
