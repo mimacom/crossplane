@@ -102,8 +102,9 @@ jobs:
             test-suite: function-response-cache
           - test-area: apiextensions-legacy
             test-suite: function-response-cache
-          - test-area: pkg
-            test-suite: package-dependency-updates
+          # Fails in our repo due to Unauthenticated GCP Artifact Registry access
+          # - test-area: pkg
+          #   test-suite: package-dependency-updates
           - test-area: pkg
             test-suite: package-signature-verification
           - test-area: ops
