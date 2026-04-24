@@ -12,7 +12,8 @@ on:
     - cron: '0 8 * * *'
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 env:
   LOG_LEVEL: "info"
@@ -29,13 +30,6 @@ jobs:
       - name: Validate Renovate JSON
         run:  npx --yes --package renovate -- renovate-config-validator
 
-      - name: Get token
-        id: get-github-app-token
-        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2
-        with:
-          app-id: ${{ secrets.RENOVATE_GITHUB_APP_ID }}
-          private-key: ${{ secrets.RENOVATE_GITHUB_APP_PRIVATE_KEY }}
-
       - name: Self-hosted Renovate
         uses: renovatebot/github-action@e23f4d9675532445118c886434f5a34292b630b4 # v46.0.2
         env:
@@ -46,7 +40,7 @@ jobs:
           RENOVATE_ALLOWED_COMMANDS: '["^nix .+", "^earthly .+"]'
         with:
           configurationFile: .github/renovate.json5
-          token: '${{ steps.get-github-app-token.outputs.token }}'
+          token: '${{ secrets.RENOVATE_TOKEN }}'
           mount-docker-socket: true
           docker-user: root
           docker-cmd-file: .github/renovate-entrypoint.sh
