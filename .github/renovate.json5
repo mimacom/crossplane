@@ -13,4 +13,5 @@
     'local>crossplane/crossplane//.github/renovate-earthly.json5',
     'local>crossplane/crossplane//.github/renovate-nix.json5',
   ],
+  baseBranches: ['mima'],
 }
