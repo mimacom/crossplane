@@ -163,6 +163,7 @@ jobs:
 
   # Build all artifacts (binaries, images, Helm chart)
   build-artifacts:
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read
       packages: write  # for pushing to ghcr.io
