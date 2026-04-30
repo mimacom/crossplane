@@ -167,6 +167,7 @@ jobs:
     permissions:
       contents: read
       packages: write  # for pushing to ghcr.io
+      id-token: write  # for keyless cosign signing via GitHub OIDC
     runs-on: ubuntu-24.04
 
     steps:
@@ -216,12 +217,29 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push Images to GitHub Container Registry
-        if: github.ref == 'refs/heads/mima' || github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
+        if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
         run: nix run --option warn-dirty false .#push-images -- ghcr.io/${{ github.repository_owner }}/crossplane
 
       - name: Push Helm Chart to GitHub Container Registry
-        if: github.ref == 'refs/heads/mima' || github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
+        if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
         run: nix shell nixpkgs#kubernetes-helm -c helm push result/charts/crossplane-*.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
+
+      - name: Install Cosign
+        if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3
+
+      - name: Sign Docker Image
+        if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
+        run: |
+          cosign sign --yes \
+            ghcr.io/${{ github.repository_owner }}/crossplane:${{ env.VERSION }}
+
+      - name: Sign Helm Chart
+        if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
+        run: |
+          CHART_VERSION="${{ env.VERSION }}"
+          cosign sign --yes \
+            ghcr.io/${{ github.repository_owner }}/charts/crossplane:${CHART_VERSION#v}
 
 
   # Fuzz testing (unchanged from original)
