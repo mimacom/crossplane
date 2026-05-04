@@ -167,7 +167,6 @@ jobs:
     permissions:
       contents: read
       packages: write  # for pushing to ghcr.io
-      id-token: write  # for keyless cosign signing via GitHub OIDC
     runs-on: ubuntu-24.04
 
     steps:
@@ -190,10 +189,6 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
 
-
-      # Set buildVersion in flake.nix. The version is an input to the build.
-      # Pure (sandboxed, reproducible) Nix build inputs can only come from git
-      # tracked files, so we set it in flake.nix before building.
       - name: Set Version
         run: |
           VERSION=$(git describe --dirty --always --tags | sed 's/-/./2g')
@@ -230,15 +225,33 @@ jobs:
 
       - name: Sign Docker Image
         if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
+        env:
+          COSIGN_SIGNING_KEY: ${{ secrets.COSIGN_SIGNING_KEY }}
+          COSIGN_SIGNING_CERT: ${{ secrets.COSIGN_SIGNING_CERT }}
+          COSIGN_CERT_CHAIN: ${{ secrets.COSIGN_CERT_CHAIN }}
         run: |
-          cosign sign --yes \
+          cosign sign \
+            --key   env://COSIGN_SIGNING_KEY \
+            --cert  <(echo "$COSIGN_SIGNING_CERT") \
+            --cert-chain <(echo "$COSIGN_CERT_CHAIN") \
+            --tlog-upload=false \
+            --yes \
             ghcr.io/${{ github.repository_owner }}/crossplane:${{ env.VERSION }}
 
       - name: Sign Helm Chart
         if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
+        env:
+          COSIGN_SIGNING_KEY: ${{ secrets.COSIGN_SIGNING_KEY }}
+          COSIGN_SIGNING_CERT: ${{ secrets.COSIGN_SIGNING_CERT }}
+          COSIGN_CERT_CHAIN: ${{ secrets.COSIGN_CERT_CHAIN }}
         run: |
           CHART_VERSION="${{ env.VERSION }}"
-          cosign sign --yes \
+          cosign sign \
+            --key   env://COSIGN_SIGNING_KEY \
+            --cert  <(echo "$COSIGN_SIGNING_CERT") \
+            --cert-chain <(echo "$COSIGN_CERT_CHAIN") \
+            --tlog-upload=false \
+            --yes \
             ghcr.io/${{ github.repository_owner }}/charts/crossplane:${CHART_VERSION#v}
 
 
