@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: not-an-operation
-data:
-  foo: bar

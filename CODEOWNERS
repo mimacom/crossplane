@@ -59,8 +59,5 @@
 /cmd/crossplane/rbac/                @crossplane/crossplane-maintainers @negz
 /internal/controller/rbac/           @crossplane/crossplane-maintainers @negz
 
-# Crossplane CLI
-/cmd/crank/                          @crossplane/crossplane-maintainers @phisco
-
 # Misc
 /internal/features/                  @crossplane/crossplane-maintainers @negz
