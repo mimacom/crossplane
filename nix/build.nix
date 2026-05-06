@@ -122,34 +122,6 @@ let
       };
     };
 
-  # Build crank tarball with checksums.
-  crankBundle =
-    {
-      version,
-      crankDrv,
-      platform,
-    }:
-    let
-      ext = if platform.os == "windows" then ".exe" else "";
-    in
-    pkgs.runCommand "crank-bundle-${platform.os}-${platform.arch}-${version}"
-      {
-        nativeBuildInputs = [
-          pkgs.gnutar
-          pkgs.gzip
-        ];
-      }
-      ''
-        mkdir -p $out
-        cp ${crankDrv}/bin/crank${ext} .
-        cp ${crankDrv}/bin/crank${ext}.sha256 .
-        chmod 755 crank${ext}
-        chmod 644 crank${ext}.sha256
-        tar -czvf $out/crank.tar.gz crank${ext} crank${ext}.sha256
-        cd $out
-        sha256sum crank.tar.gz | head -c 64 > crank.tar.gz.sha256
-      '';
-
 in
 {
   # OCI images for all Linux platforms.
@@ -261,18 +233,6 @@ in
         }) goPlatforms
       );
 
-      crankBins = builtins.listToAttrs (
-        map (p: {
-          name = "${p.os}-${p.arch}";
-          value = goBinary {
-            inherit version;
-            pname = "crank";
-            subPackage = "cmd/crank";
-            platform = p;
-          };
-        }) goPlatforms
-      );
-
       crossplaneImages = builtins.listToAttrs (
         map (p: {
           name = "${p.os}-${p.arch}";
@@ -285,17 +245,6 @@ in
             });
           };
         }) imagePlatforms
-      );
-
-      crankBundles = builtins.listToAttrs (
-        map (p: {
-          name = "${p.os}-${p.arch}";
-          value = crankBundle {
-            inherit version;
-            crankDrv = crankBins."${p.os}-${p.arch}";
-            platform = p;
-          };
-        }) goPlatforms
       );
 
       chart =
@@ -316,21 +265,15 @@ in
       ${pkgs.lib.concatMapStrings (p: ''
         mkdir -p $out/bin/${p.os}_${p.arch}
         cp ${crossplaneBins."${p.os}-${p.arch}"}/bin/* $out/bin/${p.os}_${p.arch}/
-        cp ${crankBins."${p.os}-${p.arch}"}/bin/* $out/bin/${p.os}_${p.arch}/
         ${
           let
             ext = if p.os == "windows" then ".exe" else "";
           in
           ''
-            chmod 755 $out/bin/${p.os}_${p.arch}/crossplane${ext} $out/bin/${p.os}_${p.arch}/crank${ext}
-            chmod 644 $out/bin/${p.os}_${p.arch}/crossplane${ext}.sha256 $out/bin/${p.os}_${p.arch}/crank${ext}.sha256
+            chmod 755 $out/bin/${p.os}_${p.arch}/crossplane${ext}
+            chmod 644 $out/bin/${p.os}_${p.arch}/crossplane${ext}.sha256
           ''
         }
-      '') goPlatforms}
-
-      ${pkgs.lib.concatMapStrings (p: ''
-        mkdir -p $out/bundle/${p.os}_${p.arch}
-        cp ${crankBundles."${p.os}-${p.arch}"}/* $out/bundle/${p.os}_${p.arch}/
       '') goPlatforms}
 
       cp ${chart}/* $out/charts/
