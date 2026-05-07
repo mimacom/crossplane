@@ -248,12 +248,6 @@ linters:
           - staticcheck
         text: 'SA1019: .+ is deprecated: this uses the old events API and will be removed in a future release. Please use GetEventRecorder instead.'
 
-      # We include a 'common' package under crank, which revive doesn't like.
-      - linters:
-          - revive
-        path: 'cmd/crank/common/*'
-        text: 'var-naming: avoid meaningless package names'
-
     paths:
       - zz_generated\..+\.go$
       - .+\.pb.go$
