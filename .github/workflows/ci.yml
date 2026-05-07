@@ -221,7 +221,7 @@ jobs:
 
       - name: Install Cosign
         if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
-        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
       - name: Sign Docker Image
         if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
