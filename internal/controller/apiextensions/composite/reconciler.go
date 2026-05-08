@@ -556,7 +556,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, errors.Wrap(resource.IgnoreNotFound(err), errGet)
 	}
 
-	xrBefore := xr.DeepCopyObject()
+	statusBefore, _, _ := kunstructured.NestedFieldCopy(xr.Object, "status")
 
 	log = log.WithValues(
 		"uid", xr.GetUID(),
@@ -874,7 +874,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		result = reconcile.Result{RequeueAfter: jitter(res.TTL)}
 	}
 
-	if !cmp.Equal(xr, xrBefore) {
+	if !cmp.Equal(statusBefore, xr.Object["status"]) {
 		return result, errors.Wrap(r.client.Status().Update(updateCtx, xr), errUpdateStatus)
 	}
 	return result, nil
