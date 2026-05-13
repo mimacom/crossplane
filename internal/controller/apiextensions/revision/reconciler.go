@@ -22,12 +22,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	"github.com/google/go-cmp/cmp"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/conditions"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"

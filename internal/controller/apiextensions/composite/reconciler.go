@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,8 +34,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	"github.com/google/go-cmp/cmp"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/conditions"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
