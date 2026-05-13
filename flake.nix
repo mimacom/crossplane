@@ -118,6 +118,7 @@
               imagePlatforms
               ;
           };
+          earthly = pkgs.earthly;
         }
       );
 
