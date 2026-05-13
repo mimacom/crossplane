@@ -40,6 +40,20 @@
       '(^|/)test/e2e/.*\\.ya?ml$',
     ],
   },
+  customManagers: [
+    {
+      customType: 'regex',
+      description: 'Bump Renovate version used by the config validator',
+      fileMatch: [
+        '^\\.github/workflows/renovate\\.ya?ml$',
+      ],
+      matchStrings: [
+        'RENOVATE_VERSION: "(?<currentValue>.*?)"',
+      ],
+      datasourceTemplate: 'npm',
+      depNameTemplate: 'renovate',
+    },
+  ],
   // PackageRules disabled below should be enabled in case of vulnerabilities
   vulnerabilityAlerts: {
     enabled: true,
