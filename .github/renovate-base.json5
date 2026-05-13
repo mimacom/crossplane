@@ -54,9 +54,14 @@
       depNameTemplate: 'renovate',
     },
   ],
-  // PackageRules disabled below should be enabled in case of vulnerabilities
+  // Security updates should bypass dependency dashboard approval.
   vulnerabilityAlerts: {
     enabled: true,
+    automerge: false,
+    dependencyDashboardApproval: false,
+    addLabels: [
+      'security',
+    ],
   },
   osvVulnerabilityAlerts: true,
   // Renovate evaluates all packageRules in order, so low priority rules should
