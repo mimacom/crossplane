@@ -118,7 +118,7 @@
               imagePlatforms
               ;
           };
-          earthly = pkgs.earthly;
+          inherit (pkgs) earthly;
         }
       );
 
