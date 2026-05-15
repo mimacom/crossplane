@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -577,6 +578,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, errors.Wrap(resource.IgnoreNotFound(err), errGet)
 	}
 
+	statusBefore, _, _ := kunstructured.NestedFieldCopy(xr.Object, "status")
+
 	log = log.WithValues(
 		"uid", xr.GetUID(),
 		"version", xr.GetResourceVersion(),
@@ -904,7 +907,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		result = reconcile.Result{RequeueAfter: jitter(res.TTL)}
 	}
 
-	return result, errors.Wrap(r.client.Status().Update(updateCtx, xr), errUpdateStatus)
+	if !cmp.Equal(statusBefore, xr.Object["status"]) {
+		return result, errors.Wrap(r.client.Status().Update(updateCtx, xr), errUpdateStatus)
+	}
+	return result, nil
 }
 
 type compositionResultMeta struct {

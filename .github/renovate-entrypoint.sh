@@ -2,13 +2,7 @@
 
 set -e
 
-# Install Earthly (for release branches)
-echo "Installing Earthly..."
-curl -fsSLo /usr/local/bin/earthly https://github.com/earthly/earthly/releases/latest/download/earthly-linux-amd64
-chmod +x /usr/local/bin/earthly
-/usr/local/bin/earthly bootstrap
-
-# Install Nix (for main branch)
+# Install Nix.
 echo "Installing Nix..."
 apt-get update && apt-get install -y nix-bin
 
@@ -31,5 +25,10 @@ extra-trusted-public-keys = crossplane.cachix.org-1:NJluVUN9TX0rY/zAxHYaT19Y5ik4
 EOF
 
 echo "Nix $(nix --version) installed successfully"
+
+# Install Earthly (for release branches) from the repository flake, pinned by flake.lock.
+echo "Installing Earthly..."
+nix profile install .#earthly
+earthly bootstrap
 
 renovate
