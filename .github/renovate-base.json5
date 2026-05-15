@@ -18,6 +18,7 @@
     'release-2.0',
     'release-2.1',
     'release-2.2',
+    'release-2.3',
   ],
   ignorePaths: [
     'design/**',
@@ -40,9 +41,28 @@
       '(^|/)test/e2e/.*\\.ya?ml$',
     ],
   },
-  // PackageRules disabled below should be enabled in case of vulnerabilities
+  customManagers: [
+    {
+      customType: 'regex',
+      description: 'Bump Renovate version used by the config validator',
+      fileMatch: [
+        '^\\.github/workflows/renovate\\.ya?ml$',
+      ],
+      matchStrings: [
+        'RENOVATE_VERSION: "(?<currentValue>.*?)"',
+      ],
+      datasourceTemplate: 'npm',
+      depNameTemplate: 'renovate',
+    },
+  ],
+  // Security updates should bypass dependency dashboard approval.
   vulnerabilityAlerts: {
     enabled: true,
+    automerge: false,
+    dependencyDashboardApproval: false,
+    addLabels: [
+      'security',
+    ],
   },
   osvVulnerabilityAlerts: true,
   // Renovate evaluates all packageRules in order, so low priority rules should
