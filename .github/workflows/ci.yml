@@ -25,7 +25,7 @@ jobs:
 
 
       - name: Verify Generated Code
-        run: nix build .#checks.x86_64-linux.generate --print-build-logs
+        run: nix build .#checks.x86_64-linux.generate .#checks.x86_64-linux.generate-apis --print-build-logs
 
   lint:
     runs-on: ubuntu-24.04
@@ -39,7 +39,7 @@ jobs:
 
 
       - name: Lint
-        run: nix build .#checks.x86_64-linux.go-lint .#checks.x86_64-linux.helm-lint --print-build-logs
+        run: nix build .#checks.x86_64-linux.go-lint .#checks.x86_64-linux.go-lint-apis .#checks.x86_64-linux.helm-lint --print-build-logs
 
   codeql:
     runs-on: ubuntu-24.04
@@ -78,7 +78,7 @@ jobs:
 
 
       - name: Run Unit Tests
-        run: nix build .#checks.x86_64-linux.test --print-build-logs
+        run: nix build .#checks.x86_64-linux.test .#checks.x86_64-linux.test-apis --print-build-logs
 
 
   # E2E tests run outside the Nix sandbox (needs Docker)

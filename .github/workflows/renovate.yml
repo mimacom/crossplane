@@ -17,6 +17,7 @@ permissions:
 
 env:
   LOG_LEVEL: "info"
+  RENOVATE_VERSION: "42.99.0"
 
 jobs:
   renovate:
@@ -28,7 +29,7 @@ jobs:
 
       # Don't waste time starting Renovate if JSON is invalid
       - name: Validate Renovate JSON
-        run:  npx --yes --package renovate -- renovate-config-validator
+        run: npx --yes --package renovate@${RENOVATE_VERSION} -- renovate-config-validator
 
       - name: Self-hosted Renovate
         uses: renovatebot/github-action@e23f4d9675532445118c886434f5a34292b630b4 # v46.0.2

@@ -9,10 +9,10 @@ require (
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/alecthomas/kong v1.14.0
-	github.com/crossplane/crossplane-runtime/v2 v2.3.0-rc.0.0.20260416145853-f43d88270996
-	github.com/crossplane/crossplane/apis/v2 v2.0.0-20260506160416-71e233bfd739
+	github.com/crossplane/crossplane-runtime/v2 v2.4.0-rc.0
+	github.com/crossplane/crossplane/apis/v2 v2.0.0-20260424160951-8f231230ebb6
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-containerregistry v0.21.5
+	github.com/google/go-containerregistry v0.21.2
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/afero v1.15.0
 	golang.org/x/sync v0.20.0
@@ -34,7 +34,7 @@ require (
 
 require (
 	github.com/google/go-containerregistry/pkg/authn/k8schain v0.0.0-20230919002926-dbcd01c402b2 // indirect
-	github.com/in-toto/in-toto-golang v0.10.0 // indirect
+	github.com/in-toto/in-toto-golang v0.11.0 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sigstore/cosign/v3 v3.0.5 // indirect
@@ -172,6 +172,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/docker/cli v29.4.0+incompatible // indirect
+	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.5 // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/evanphx/json-patch v5.9.11+incompatible // indirect
