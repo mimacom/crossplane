@@ -26,9 +26,13 @@ EOF
 
 echo "Nix $(nix --version) installed successfully"
 
-# Install Earthly (for release branches) from the repository flake, pinned by flake.lock.
+# Install Earthly (for release branches) from the repository flake on main,
+# pinned by main's flake.lock. The flake is referenced by URL because this
+# entrypoint runs in the Renovate container before the target repo is checked
+# out, so the working directory does not yet contain a flake.nix.
 echo "Installing Earthly..."
-nix profile install .#earthly
+nix profile install github:crossplane/crossplane#earthly
+export PATH="$HOME/.nix-profile/bin:$PATH"
 earthly bootstrap
 
 renovate
