@@ -9,8 +9,9 @@
   // The local> syntax requires owner/repo format with // for paths.
   // See: https://docs.renovatebot.com/config-presets/#local-presets
   extends: [
-    'local>crossplane/crossplane//.github/renovate-base.json5',
-    'local>crossplane/crossplane//.github/renovate-earthly.json5',
-    'local>crossplane/crossplane//.github/renovate-nix.json5',
+    'local>mimacom/crossplane//.github/renovate-base.json5',
+    'local>mimacom/crossplane//.github/renovate-earthly.json5',
+    'local>mimacom/crossplane//.github/renovate-nix.json5',
   ],
+  baseBranches: ['release-2.3'],
 }
