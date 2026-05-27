@@ -13,10 +13,11 @@
   // The branches renovate should target
   // PLEASE UPDATE THIS WHEN RELEASING.
   baseBranches: [
-    'main',
+    'mima',
     'release-1.20',
     'release-2.0',
     'release-2.1',
+    'release-2.2',
   ],
   ignorePaths: [
     'design/**',
@@ -39,9 +40,14 @@
       '(^|/)test/e2e/.*\\.ya?ml$',
     ],
   },
-  // PackageRules disabled below should be enabled in case of vulnerabilities
+  // Security updates should bypass dependency dashboard approval.
   vulnerabilityAlerts: {
     enabled: true,
+    automerge: false,
+    dependencyDashboardApproval: false,
+    addLabels: [
+      'security',
+    ],
   },
   osvVulnerabilityAlerts: true,
   // Renovate evaluates all packageRules in order, so low priority rules should

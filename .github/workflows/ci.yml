@@ -12,11 +12,8 @@ permissions:
   contents: read
 
 env:
-  # We can't run a step 'if secrets.FOO != ""' but we can run a step
-  # 'if env.FOO' != ""', so we copy secrets to env vars for conditional checks.
-  DOCKER_USR: ${{ secrets.DOCKER_USR }}
-  UPBOUND_MARKETPLACE_PUSH_ROBOT_USR: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }}
-  AWS_USR: ${{ secrets.AWS_USR }}
+  COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_SIGNING_KEY }}
+  COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
 
 jobs:
   check-diff:
@@ -255,21 +252,6 @@ jobs:
           name: output
           path: result/**
 
-      - name: Login to DockerHub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        if: env.DOCKER_USR != ''
-        with:
-          username: ${{ secrets.DOCKER_USR }}
-          password: ${{ secrets.DOCKER_PSW }}
-
-      - name: Login to Upbound
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        if: env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
-        with:
-          registry: xpkg.upbound.io
-          username: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }}
-          password: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_PSW }}
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -277,33 +259,36 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push Images to DockerHub
-        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-')) && env.DOCKER_USR != ''
-        run: nix run --option warn-dirty false .#push-images -- crossplane/crossplane
-
-      - name: Push Images to Upbound
-        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-')) && env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
-        run: nix run --option warn-dirty false .#push-images -- xpkg.upbound.io/crossplane/crossplane
-
       - name: Push Images to GitHub Container Registry
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-')
-        run: nix run --option warn-dirty false .#push-images -- ghcr.io/crossplane/crossplane
+        if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
+        run: nix run --option warn-dirty false .#push-images -- ghcr.io/${{ github.repository_owner }}/crossplane
 
-      - name: Push Artifacts to S3
-        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-')) && env.AWS_USR != ''
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_USR }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_PSW }}
-          AWS_DEFAULT_REGION: us-east-1
-        run: nix run --option warn-dirty false .#push-artifacts -- "${GITHUB_REF##*/}"
+      - name: Push Helm Chart to GitHub Container Registry
+        if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
+        run: nix shell nixpkgs#kubernetes-helm -c helm push result/charts/crossplane-*.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
 
-      - name: Promote Artifacts to Master Channel
-        if: github.ref == 'refs/heads/main' && env.AWS_USR != ''
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_USR }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_PSW }}
-          AWS_DEFAULT_REGION: us-east-1
-        run: nix run --option warn-dirty false .#promote-artifacts -- main "$VERSION" master
+      - name: Install Cosign
+        if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+
+      - name: Sign Docker Image
+        if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
+        run: |
+          cosign sign \
+            --key env://COSIGN_PRIVATE_KEY \
+            --tlog-upload=false \
+            --yes \
+            ghcr.io/${{ github.repository_owner }}/crossplane:${{ env.VERSION }}
+
+      - name: Sign Helm Chart
+        if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-')
+        run: |
+          CHART_VERSION="${{ env.VERSION }}"
+          cosign sign \
+            --key env://COSIGN_PRIVATE_KEY \
+            --tlog-upload=false \
+            --yes \
+            ghcr.io/${{ github.repository_owner }}/charts/crossplane:${CHART_VERSION#v}
 
   # Fuzz testing (unchanged from original)
   fuzz-test:
@@ -339,8 +324,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Lint and Push Protocol Buffers
+      - name: Lint Protocol Buffers
         uses: bufbuild/buf-action@8f4a1456a0ab6a1eb80ba68e53832e6fcfacc16c # v1
         with:
-          token: ${{ secrets.BUF_TOKEN }}
           pr_comment: false
+          push: false
