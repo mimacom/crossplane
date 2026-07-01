@@ -51,7 +51,6 @@ import (
 
 	v1 "github.com/crossplane/crossplane/apis/v2/apiextensions/v1"
 	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
-	"github.com/crossplane/crossplane/v2/internal/xerrors"
 	"github.com/crossplane/crossplane/v2/internal/xfn"
 	fnv1 "github.com/crossplane/crossplane/v2/proto/fn/v1"
 )
@@ -319,7 +318,7 @@ func TestFunctionCompose(t *testing.T) {
 				},
 			},
 			want: want{
-				err: errors.Errorf(errFmtFatalResult, "run-cool-function", "oh no"),
+				err: &PipelineFatalError{Step: "run-cool-function", Message: "oh no"},
 				res: CompositionResult{
 					Events: []TargetedEvent{
 						// The event with minimum values.
@@ -516,7 +515,7 @@ func TestFunctionCompose(t *testing.T) {
 				},
 			},
 			want: want{
-				err: xerrors.ComposedResourceError{
+				err: ComposedResourceError{
 					Message: fmt.Sprintf(errFmtGenerateName, "cool-resource"),
 					Composed: &composed.Unstructured{
 						Unstructured: unstructured.Unstructured{
@@ -1070,7 +1069,7 @@ func TestFunctionCompose(t *testing.T) {
 				},
 			},
 			want: want{
-				err: xerrors.ComposedResourceError{
+				err: ComposedResourceError{
 					Message: fmt.Sprintf(errFmtApplyCD, "uncool-resource"),
 					Composed: &composed.Unstructured{
 						Unstructured: unstructured.Unstructured{
@@ -1467,8 +1466,8 @@ func TestFunctionCompose(t *testing.T) {
 			}
 			// Check for our typed errors.
 			if tc.want.err != nil {
-				if wantErr := new(xerrors.ComposedResourceError); errors.As(tc.want.err, wantErr) {
-					if gotErr := new(xerrors.ComposedResourceError); errors.As(err, gotErr) {
+				if wantErr := new(ComposedResourceError); errors.As(tc.want.err, wantErr) {
+					if gotErr := new(ComposedResourceError); errors.As(err, gotErr) {
 						if diff := cmp.Diff(wantErr, gotErr, test.EquateErrors()); diff != "" {
 							t.Errorf("\n%s\nComposedResourceError: -want, +got:\n%s", tc.reason, diff)
 						}
@@ -2132,6 +2131,14 @@ func TestUpdateResourceRefs(t *testing.T) {
 							},
 						},
 					},
+					"never-created-b-ns-a": ComposedResourceState{
+						Resource: &fake.Composed{
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace: "a",
+								Name:      "never-created-b-42",
+							},
+						},
+					},
 					"never-created-a": ComposedResourceState{
 						Resource: &fake.Composed{
 							ObjectMeta: metav1.ObjectMeta{
@@ -2147,6 +2154,7 @@ func TestUpdateResourceRefs(t *testing.T) {
 					ComposedResourcesReferencer: fake.ComposedResourcesReferencer{
 						Refs: []corev1.ObjectReference{
 							{Name: "never-created-a-42"},
+							{Namespace: "a", Name: "never-created-b-42"},
 							{Namespace: "b", Name: "never-created-b-42"},
 							{Namespace: "c", Name: "never-created-c-42"},
 						},
@@ -2219,5 +2227,45 @@ func TestUpdateResourceRefs(t *testing.T) {
 				t.Errorf("\n%s\nUpdateResourceRefs(...): -want, +got:\n%s", tc.reason, diff)
 			}
 		})
+	}
+}
+
+func TestPipelineFatalErrorError(t *testing.T) {
+	// PipelineFatalError.Error() must produce the same string as the
+	// PipelineFatalErrorFmt format, byte-identical, so reconciler events
+	// and condition messages remain unchanged.
+	cases := map[string]struct {
+		err  *PipelineFatalError
+		want string
+	}{
+		"PopulatedFields": {
+			err:  &PipelineFatalError{Step: "fetch-extras", Message: "Required extra resource \"namedClusterRole\" not found"},
+			want: fmt.Sprintf(PipelineFatalErrorFmt, "fetch-extras", "Required extra resource \"namedClusterRole\" not found"),
+		},
+		"EmptyFields": {
+			err:  &PipelineFatalError{},
+			want: fmt.Sprintf(PipelineFatalErrorFmt, "", ""),
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, tc.err.Error()); diff != "" {
+				t.Errorf("PipelineFatalError.Error(): -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestPipelineFatalErrorAs(t *testing.T) {
+	// errors.As traverses errors.Wrap chains.
+	pfe := &PipelineFatalError{Step: "s", Message: "m"}
+	wrapped := errors.Wrap(pfe, "cannot compose resources")
+
+	var got *PipelineFatalError
+	if !errors.As(wrapped, &got) {
+		t.Fatalf("errors.As did not find *PipelineFatalError in wrapped chain")
+	}
+	if diff := cmp.Diff(pfe, got); diff != "" {
+		t.Errorf("errors.As recovered PipelineFatalError: -want, +got:\n%s", diff)
 	}
 }

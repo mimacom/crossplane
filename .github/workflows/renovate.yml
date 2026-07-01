@@ -12,27 +12,35 @@ on:
     - cron: '0 8 * * *'
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 env:
   LOG_LEVEL: "info"
-  RENOVATE_VERSION: "42.99.0"
+  RENOVATE_VERSION: "43.230.0"
 
 jobs:
   renovate:
     runs-on: ubuntu-latest
-
+    if: |
+      !github.event.repository.fork &&
+      !github.event.pull_request.head.repo.fork
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       # Don't waste time starting Renovate if JSON is invalid
       - name: Validate Renovate JSON
         run: npx --yes --package renovate@${RENOVATE_VERSION} -- renovate-config-validator
 
+      - name: Get token
+        id: get-github-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.RENOVATE_GITHUB_APP_ID }}
+          private-key: ${{ secrets.RENOVATE_GITHUB_APP_PRIVATE_KEY }}
+
       - name: Self-hosted Renovate
-        uses: renovatebot/github-action@e23f4d9675532445118c886434f5a34292b630b4 # v46.0.2
+        uses: renovatebot/github-action@8217b3fc286df088d7c27f3255fe8414463bc0fd # v46.1.15
         env:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           # Use GitHub API to create commits
@@ -41,7 +49,7 @@ jobs:
           RENOVATE_ALLOWED_COMMANDS: '["^nix .+", "^earthly .+"]'
         with:
           configurationFile: .github/renovate.json5
-          token: '${{ secrets.RENOVATE_TOKEN }}'
+          token: '${{ steps.get-github-app-token.outputs.token }}'
           mount-docker-socket: true
           docker-user: root
           docker-cmd-file: .github/renovate-entrypoint.sh
