@@ -319,7 +319,7 @@ func TestFunctionCompose(t *testing.T) {
 				},
 			},
 			want: want{
-				err: errors.Errorf(errFmtFatalResult, "run-cool-function", "oh no"),
+				err: &PipelineFatalError{Step: "run-cool-function", Message: "oh no"},
 				res: CompositionResult{
 					Events: []TargetedEvent{
 						// The event with minimum values.
@@ -2132,6 +2132,14 @@ func TestUpdateResourceRefs(t *testing.T) {
 							},
 						},
 					},
+					"never-created-b-ns-a": ComposedResourceState{
+						Resource: &fake.Composed{
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace: "a",
+								Name:      "never-created-b-42",
+							},
+						},
+					},
 					"never-created-a": ComposedResourceState{
 						Resource: &fake.Composed{
 							ObjectMeta: metav1.ObjectMeta{
@@ -2147,6 +2155,7 @@ func TestUpdateResourceRefs(t *testing.T) {
 					ComposedResourcesReferencer: fake.ComposedResourcesReferencer{
 						Refs: []corev1.ObjectReference{
 							{Name: "never-created-a-42"},
+							{Namespace: "a", Name: "never-created-b-42"},
 							{Namespace: "b", Name: "never-created-b-42"},
 							{Namespace: "c", Name: "never-created-c-42"},
 						},
@@ -2219,5 +2228,45 @@ func TestUpdateResourceRefs(t *testing.T) {
 				t.Errorf("\n%s\nUpdateResourceRefs(...): -want, +got:\n%s", tc.reason, diff)
 			}
 		})
+	}
+}
+
+func TestPipelineFatalErrorError(t *testing.T) {
+	// PipelineFatalError.Error() must produce the same string as the
+	// PipelineFatalErrorFmt format, byte-identical, so reconciler events
+	// and condition messages remain unchanged.
+	cases := map[string]struct {
+		err  *PipelineFatalError
+		want string
+	}{
+		"PopulatedFields": {
+			err:  &PipelineFatalError{Step: "fetch-extras", Message: "Required extra resource \"namedClusterRole\" not found"},
+			want: fmt.Sprintf(PipelineFatalErrorFmt, "fetch-extras", "Required extra resource \"namedClusterRole\" not found"),
+		},
+		"EmptyFields": {
+			err:  &PipelineFatalError{},
+			want: fmt.Sprintf(PipelineFatalErrorFmt, "", ""),
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, tc.err.Error()); diff != "" {
+				t.Errorf("PipelineFatalError.Error(): -want, +got:\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestPipelineFatalErrorAs(t *testing.T) {
+	// errors.As traverses errors.Wrap chains.
+	pfe := &PipelineFatalError{Step: "s", Message: "m"}
+	wrapped := errors.Wrap(pfe, "cannot compose resources")
+
+	var got *PipelineFatalError
+	if !errors.As(wrapped, &got) {
+		t.Fatalf("errors.As did not find *PipelineFatalError in wrapped chain")
+	}
+	if diff := cmp.Diff(pfe, got); diff != "" {
+		t.Errorf("errors.As recovered PipelineFatalError: -want, +got:\n%s", diff)
 	}
 }
