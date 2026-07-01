@@ -1,0 +1,84 @@
+name: Cleanup Registry
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # daily at 03:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    env:
+      ORG: ${{ github.repository_owner }}
+    steps:
+      - name: Cleanup branch/commit images (older than 7 days)
+        # Matches: v2.2.0-107.g0823b0620, v2.2.0-107.g0823b0620-amd64, etc.
+        # Skips clean release tags: v2.2.0, v2.2.0-amd64, v2.2.0-arm64, etc.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NOW=$(date -u +%s)
+          MAX_AGE=604800  # 7 days in seconds
+
+          for PKG in crossplane charts%2Fcrossplane; do
+            echo "Scanning $PKG for branch/commit images older than 7 days..."
+            gh api --paginate "/orgs/${ORG}/packages/container/${PKG}/versions" 2>/dev/null | \
+            jq -r --argjson now "$NOW" --argjson max_age "$MAX_AGE" '
+              .[] | select(
+                (.created_at | fromdateiso8601) < ($now - $max_age) and
+                (.metadata.container.tags | length > 0) and
+                (.metadata.container.tags | any(test("^v[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]+\\.g[0-9a-f]+"))) and
+                (.metadata.container.tags | all(test("^v[0-9]+\\.[0-9]+\\.[0-9]+(-(?:amd64|arm64|arm|ppc64le))?$") | not))
+              ) | .id | tostring
+            ' | while read -r id; do
+              echo "Deleting version $id from $PKG (branch/commit build, expired)"
+              gh api -X DELETE "/orgs/${ORG}/packages/container/${PKG}/versions/${id}"
+            done
+          done
+
+      - name: Cleanup cosign signatures (older than 30 days)
+        # .sig entries accumulate on every push to mima/release-* branches.
+        # 30-day window keeps signatures for recent releases while cleaning branch-build sigs.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NOW=$(date -u +%s)
+          MAX_AGE=2592000  # 30 days in seconds
+
+          for PKG in crossplane charts%2Fcrossplane; do
+            echo "Scanning $PKG for cosign signatures older than 30 days..."
+            gh api --paginate "/orgs/${ORG}/packages/container/${PKG}/versions" 2>/dev/null | \
+            jq -r --argjson now "$NOW" --argjson max_age "$MAX_AGE" '
+              .[] | select(
+                (.created_at | fromdateiso8601) < ($now - $max_age) and
+                (.metadata.container.tags | any(test("^sha256-[a-f0-9]+\\.sig$")))
+              ) | .id | tostring
+            ' | while read -r id; do
+              echo "Deleting version $id from $PKG (cosign signature, expired)"
+              gh api -X DELETE "/orgs/${ORG}/packages/container/${PKG}/versions/${id}"
+            done
+          done
+
+      - name: Cleanup untagged dangling layers (older than 1 day)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NOW=$(date -u +%s)
+          MAX_AGE=86400  # 1 day in seconds
+
+          for PKG in crossplane charts%2Fcrossplane; do
+            echo "Scanning $PKG for untagged layers older than 1 day..."
+            gh api --paginate "/orgs/${ORG}/packages/container/${PKG}/versions" 2>/dev/null | \
+            jq -r --argjson now "$NOW" --argjson max_age "$MAX_AGE" '
+              .[] | select(
+                (.created_at | fromdateiso8601) < ($now - $max_age) and
+                (.metadata.container.tags | length == 0)
+              ) | .id | tostring
+            ' | while read -r id; do
+              echo "Deleting version $id from $PKG (untagged)"
+              gh api -X DELETE "/orgs/${ORG}/packages/container/${PKG}/versions/${id}"
+            done
+          done

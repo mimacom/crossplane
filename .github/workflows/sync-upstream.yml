@@ -1,0 +1,83 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # 06:00 UTC daily — adjust to your preferred time
+  workflow_dispatch: {}   # allow manual trigger at any time
+
+permissions:
+  contents: write
+  issues: write   # to open an issue when a conflict requires manual resolution
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          # Use a PAT with repo scope so the push triggers downstream workflows.
+          # Falls back to GITHUB_TOKEN if the secret is not set (push will not
+          # trigger other workflows in that case, but the sync itself still works).
+          token: ${{ secrets.SYNC_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/crossplane/crossplane.git
+          git fetch upstream main --tags
+
+      # Step 1: fast-forward main to upstream/main.
+      # Uses --ff-only so the job fails immediately if main has diverged
+      # (i.e. there are commits on origin/main that are not in upstream).
+      # That situation requires a manual rebase — the issue step below will flag it.
+      - name: Sync main with upstream/main
+        run: |
+          git checkout main
+          git merge --ff-only upstream/main
+          git push origin main
+
+      # Step 2: merge main into mima (brings upstream changes in while preserving
+      # mimacom-specific commits). Fails on conflict — issue step fires instead.
+      - name: Merge main into mima
+        run: |
+          git checkout mima
+          git merge main --no-edit -m "chore: sync upstream changes from main"
+          git push origin mima
+
+      # Opens a GitHub issue when any step above fails so the team is notified.
+      - name: Open issue on failure
+        if: failure()
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              title: `Upstream sync failed — manual resolution required (${new Date().toISOString().slice(0,10)})`,
+              body: [
+                '## Upstream sync failed',
+                '',
+                'The daily sync from `crossplane/crossplane` could not be applied automatically.',
+                'This usually means one of two things:',
+                '',
+                '- `main` has diverged from upstream (mimacom commits landed on `main` instead of `mima`)',
+                '- A conflict exists between upstream changes and mimacom patches on `mima`',
+                '',
+                `**Workflow run:** ${runUrl}`,
+                '',
+                '### Resolution',
+                '```sh',
+                '# Run the sync skill locally and resolve conflicts:',
+                '# /sync-upstream',
+                '```',
+              ].join('\n'),
+              labels: ['upstream-sync', 'needs-attention'],
+            });
