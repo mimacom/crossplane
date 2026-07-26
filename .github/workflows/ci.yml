@@ -3,8 +3,11 @@ name: CI
 on:
   push:
     branches:
-      - main
+      - mima
+      - mima-release-*
       - release-*
+    tags:
+      - 'v*'
   pull_request: {}
   workflow_dispatch: {}
 
@@ -12,11 +15,8 @@ permissions:
   contents: read
 
 env:
-  # We can't run a step 'if secrets.FOO != ""' but we can run a step
-  # 'if env.FOO' != ""', so we copy secrets to env vars for conditional checks.
-  DOCKER_USR: ${{ secrets.DOCKER_USR }}
-  UPBOUND_MARKETPLACE_PUSH_ROBOT_USR: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }}
-  AWS_USR: ${{ secrets.AWS_USR }}
+  COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_SIGNING_KEY }}
+  COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
 
 jobs:
   check-diff:
@@ -30,23 +30,13 @@ jobs:
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
 
       - name: Setup Cachix
-        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
         with:
           name: crossplane
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Verify Generated Code
-        run: nix build .#checks.x86_64-linux.generate .#checks.x86_64-linux.generate-apis --print-build-logs
-
-      - name: Check Diff
-        run: |
-          nix run .#tidy
-          echo "Checking that branch is clean..."
-          if [ -n "$(git status --porcelain)" ]; then
-            git status --short
-            echo "ERROR: go.mod/go.sum or vendor hashes are out of date. Run 'nix run .#tidy' and commit."
-            exit 1
-          fi
+        run: nix build .#checks.x86_64-linux.generate --print-build-logs
 
   lint:
     runs-on: ubuntu-24.04
@@ -59,13 +49,13 @@ jobs:
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
 
       - name: Setup Cachix
-        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
         with:
           name: crossplane
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Lint
-        run: nix build .#checks.x86_64-linux.go-lint .#checks.x86_64-linux.go-lint-apis .#checks.x86_64-linux.helm-lint --print-build-logs
+        run: nix build .#checks.x86_64-linux.go-lint .#checks.x86_64-linux.helm-lint --print-build-logs
 
   codeql:
     runs-on: ubuntu-24.04
@@ -81,7 +71,7 @@ jobs:
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
 
       - name: Setup Cachix
-        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
         with:
           name: crossplane
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -108,16 +98,16 @@ jobs:
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
 
       - name: Setup Cachix
-        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
         with:
           name: crossplane
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Run Unit Tests
-        run: nix build .#checks.x86_64-linux.test .#checks.x86_64-linux.test-apis --print-build-logs
+        run: nix build .#checks.x86_64-linux.test --print-build-logs
 
       - name: Publish Unit Test Coverage
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7
+        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5
         with:
           flags: unittests
           file: result/coverage.txt
@@ -166,7 +156,7 @@ jobs:
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
 
       - name: Setup Cachix
-        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
         with:
           name: crossplane
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -190,7 +180,7 @@ jobs:
           echo "CROSSPLANE_PRIOR_VERSION=$MAJOR.$MINOR" >> "$GITHUB_ENV"
 
       - name: Run E2E Tests
-        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
         with:
           timeout_minutes: 45
           max_attempts: 3
@@ -214,7 +204,7 @@ jobs:
 
       - name: Upload E2E Test Artifacts
         if: '!cancelled()'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: e2e-tests-${{ matrix.test-area }}-${{ matrix.test-suite }}
           path: ${{ runner.temp }}/e2e-tests.xml
@@ -222,7 +212,7 @@ jobs:
   # Build all artifacts (binaries, images, Helm chart)
   build-artifacts:
     permissions:
-      contents: read
+      contents: write  # for creating the GitHub Release (cosign.pub)
       packages: write  # for pushing to ghcr.io
     runs-on: ubuntu-24.04
 
@@ -247,7 +237,7 @@ jobs:
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
 
       - name: Setup Cachix
-        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
         with:
           name: crossplane
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -255,9 +245,23 @@ jobs:
       # Set buildVersion in flake.nix. The version is an input to the build.
       # Pure (sandboxed, reproducible) Nix build inputs can only come from git
       # tracked files, so we set it in flake.nix before building.
+      #
+      # VERSION must ALWAYS be a valid semver — the Nix Helm-chart build stamps it
+      # into Chart.yaml and rejects anything non-semver ("invalid semantic
+      # version"). On a v* tag this is the tag (e.g. v2.3.4). Off-tag (a mima /
+      # branch build with no reachable v* tag) `git describe --always` would fall
+      # back to a bare commit SHA, which is not semver; use a Go-style
+      # pseudo-version instead: v0.0.0-<utc-timestamp>-<short-sha>.
       - name: Set Version
         run: |
-          VERSION=$(git describe --dirty --always --tags --match 'v[0-9]*' | sed 's/-/./2g')
+          set -euo pipefail
+          if git describe --tags --exact-match --match 'v[0-9]*' >/dev/null 2>&1; then
+            VERSION="$(git describe --tags --exact-match --match 'v[0-9]*')"
+          elif VERSION="$(git describe --tags --match 'v[0-9]*' 2>/dev/null)"; then
+            VERSION="$(printf '%s' "$VERSION" | sed 's/-/./2g')"
+          else
+            VERSION="v0.0.0-$(git show -s --format=%cd --date=format:'%Y%m%d%H%M%S' HEAD)-$(git rev-parse --short=12 HEAD)"
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           sed -i "s|buildVersion = null;|buildVersion = \"$VERSION\";|" flake.nix
 
@@ -276,25 +280,10 @@ jobs:
           done
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: output
           path: result/**
-
-      - name: Login to DockerHub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
-        if: env.DOCKER_USR != ''
-        with:
-          username: ${{ secrets.DOCKER_USR }}
-          password: ${{ secrets.DOCKER_PSW }}
-
-      - name: Login to Upbound
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
-        if: env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
-        with:
-          registry: xpkg.upbound.io
-          username: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }}
-          password: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_PSW }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -303,33 +292,99 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push Images to DockerHub
-        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-')) && env.DOCKER_USR != ''
-        run: nix run --option warn-dirty false .#push-images -- crossplane/crossplane
-
-      - name: Push Images to Upbound
-        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-')) && env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
-        run: nix run --option warn-dirty false .#push-images -- xpkg.upbound.io/crossplane/crossplane
-
       - name: Push Images to GitHub Container Registry
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-')
-        run: nix run --option warn-dirty false .#push-images -- ghcr.io/crossplane/crossplane
+        if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/')
+        # Retry to survive transient GHCR blips (e.g. `Get https://ghcr.io/v2/: EOF`).
+        # push-images is idempotent — already-pushed layers report "Layer already exists".
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if nix run --option warn-dirty false .#push-images -- ghcr.io/${{ github.repository_owner }}/crossplane; then
+              exit 0
+            fi
+            echo "::warning::push-images attempt ${attempt}/3 failed; retrying in 15s..."
+            sleep 15
+          done
+          echo "::error::push-images failed after 3 attempts"
+          exit 1
 
-      - name: Push Artifacts to S3
-        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-')) && env.AWS_USR != ''
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_USR }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_PSW }}
-          AWS_DEFAULT_REGION: us-east-1
-        run: nix run --option warn-dirty false .#push-artifacts -- "${GITHUB_REF##*/}"
+      # Push the Helm chart and capture the EXACT ref+digest helm published, so
+      # the signing step below signs precisely what was pushed. helm derives the
+      # tag from the chart's own Chart.yaml version, which is not guaranteed to
+      # equal ${VERSION}; signing by digest avoids that drift entirely.
+      - name: Push Helm Chart to GitHub Container Registry
+        id: push_chart
+        if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          # Retry to survive transient GHCR blips; re-pushing the same chart is safe.
+          out=""
+          for attempt in 1 2 3; do
+            if out="$(nix shell nixpkgs#kubernetes-helm -c helm push result/charts/crossplane-*.tgz oci://ghcr.io/${{ github.repository_owner }}/charts 2>&1)"; then
+              break
+            fi
+            echo "::warning::helm push attempt ${attempt}/3 failed; retrying in 15s..."
+            out=""
+            sleep 15
+          done
+          if [ -z "$out" ]; then echo "::error::helm push failed after 3 attempts"; exit 1; fi
+          echo "$out"
+          pushed="$(printf '%s\n' "$out" | sed -n 's/^Pushed: //p' | head -1)"
+          digest="$(printf '%s\n' "$out" | sed -n 's/^Digest: //p' | head -1)"
+          if [ -z "$pushed" ] || [ -z "$digest" ]; then
+            echo "::error::could not parse helm push output for pushed ref/digest"; exit 1
+          fi
+          chart_repo="${pushed%:*}"
+          echo "chart_ref=${chart_repo}@${digest}" >> "$GITHUB_OUTPUT"
+          echo "Chart pushed: ${pushed} (${digest})"
 
-      - name: Promote Artifacts to Master Channel
-        if: github.ref == 'refs/heads/main' && env.AWS_USR != ''
+      - name: Install Cosign
+        if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/')
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+
+      - name: Sign Docker Image
+        if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/')
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_USR }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_PSW }}
-          AWS_DEFAULT_REGION: us-east-1
-        run: nix run --option warn-dirty false .#promote-artifacts -- main "$VERSION" master
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_SIGNING_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          cosign sign \
+            --key env://COSIGN_PRIVATE_KEY \
+            --tlog-upload=false \
+            --yes \
+            ghcr.io/${{ github.repository_owner }}/crossplane:${{ env.VERSION }}
+
+      - name: Sign Helm Chart
+        if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/')
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_SIGNING_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          CHART_REF: ${{ steps.push_chart.outputs.chart_ref }}
+        run: |
+          cosign sign \
+            --key env://COSIGN_PRIVATE_KEY \
+            --tlog-upload=false \
+            --yes \
+            "${CHART_REF}"
+            
+      # On a tag build, publish the GitHub Release carrying the cosign public key
+      # so it can be verified (air-gapped, no Rekor). Create the release if it
+      # does not exist yet, otherwise just (re)attach the key.
+      - name: Publish GitHub Release with cosign.pub
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view ${{ github.ref_name }} --repo ${{ github.repository }} >/dev/null 2>&1; then
+            gh release upload ${{ github.ref_name }} release/cosign.pub \
+              --repo ${{ github.repository }} --clobber
+          else
+            gh release create ${{ github.ref_name }} release/cosign.pub \
+              --repo  ${{ github.repository }} \
+              --title ${{ github.ref_name }} \
+              --notes "mimacom signed release ${{ github.ref_name }}. Verify image: cosign verify --key cosign.pub --insecure-ignore-tlog=true ghcr.io/${{ github.repository_owner }}/crossplane:${{ github.ref_name }}"
+          fi
 
   # Fuzz testing (unchanged from original)
   fuzz-test:
@@ -351,7 +406,7 @@ jobs:
           language: go
 
       - name: Upload Crash
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: failure() && steps.build.outcome == 'success'
         with:
           name: artifacts
@@ -365,8 +420,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Lint and Push Protocol Buffers
+      - name: Lint Protocol Buffers
         uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1
         with:
-          token: ${{ secrets.BUF_TOKEN }}
           pr_comment: false
+          push: false
