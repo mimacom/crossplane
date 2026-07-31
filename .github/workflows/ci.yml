@@ -239,9 +239,23 @@ jobs:
       # Set buildVersion in flake.nix. The version is an input to the build.
       # Pure (sandboxed, reproducible) Nix build inputs can only come from git
       # tracked files, so we set it in flake.nix before building.
+      #
+      # VERSION must ALWAYS be a valid semver — the Nix Helm-chart build stamps it
+      # into Chart.yaml and rejects anything non-semver ("invalid semantic
+      # version"). On a v* tag this is the tag (e.g. v2.3.4). Off-tag (a mima /
+      # branch build with no reachable v* tag) `git describe --always` would fall
+      # back to a bare commit SHA, which is not semver; use a Go-style
+      # pseudo-version instead: v0.0.0-<utc-timestamp>-<short-sha>.
       - name: Set Version
         run: |
-          VERSION=$(git describe --dirty --always --tags --match 'v[0-9]*' | sed 's/-/./2g')
+          set -euo pipefail
+          if git describe --tags --exact-match --match 'v[0-9]*' >/dev/null 2>&1; then
+            VERSION="$(git describe --tags --exact-match --match 'v[0-9]*')"
+          elif VERSION="$(git describe --tags --match 'v[0-9]*' 2>/dev/null)"; then
+            VERSION="$(printf '%s' "$VERSION" | sed 's/-/./2g')"
+          else
+            VERSION="v0.0.0-$(git show -s --format=%cd --date=format:'%Y%m%d%H%M%S' HEAD)-$(git rev-parse --short=12 HEAD)"
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           sed -i "s|buildVersion = null;|buildVersion = \"$VERSION\";|" flake.nix
 
@@ -265,9 +279,25 @@ jobs:
         if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/')
         run: nix run --option warn-dirty false .#push-images -- ghcr.io/${{ github.repository_owner }}/crossplane
 
+      # Push the Helm chart and capture the EXACT ref+digest helm published, so
+      # the signing step below signs precisely what was pushed. helm derives the
+      # tag from the chart's own Chart.yaml version, which is not guaranteed to
+      # equal ${VERSION}; signing by digest avoids that drift entirely.
       - name: Push Helm Chart to GitHub Container Registry
+        id: push_chart
         if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/')
-        run: nix shell nixpkgs#kubernetes-helm -c helm push result/charts/crossplane-*.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
+        run: |
+          set -euo pipefail
+          out="$(nix shell nixpkgs#kubernetes-helm -c helm push result/charts/crossplane-*.tgz oci://ghcr.io/${{ github.repository_owner }}/charts 2>&1)"
+          echo "$out"
+          pushed="$(printf '%s\n' "$out" | sed -n 's/^Pushed: //p' | head -1)"
+          digest="$(printf '%s\n' "$out" | sed -n 's/^Digest: //p' | head -1)"
+          if [ -z "$pushed" ] || [ -z "$digest" ]; then
+            echo "::error::could not parse helm push output for pushed ref/digest"; exit 1
+          fi
+          chart_repo="${pushed%:*}"
+          echo "chart_ref=${chart_repo}@${digest}" >> "$GITHUB_OUTPUT"
+          echo "Chart pushed: ${pushed} (${digest})"
 
       - name: Install Cosign
         if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/')
@@ -284,13 +314,14 @@ jobs:
 
       - name: Sign Helm Chart
         if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/')
+        env:
+          CHART_REF: ${{ steps.push_chart.outputs.chart_ref }}
         run: |
-          CHART_VERSION="${{ env.VERSION }}"
           cosign sign \
             --key env://COSIGN_PRIVATE_KEY \
             --tlog-upload=false \
             --yes \
-            ghcr.io/${{ github.repository_owner }}/charts/crossplane:${CHART_VERSION#v}
+            "${CHART_REF}"
 
   # Fuzz testing (unchanged from original)
   fuzz-test:
