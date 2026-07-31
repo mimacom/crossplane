@@ -3,7 +3,8 @@ name: CI
 on:
   push:
     branches:
-      - main
+      - mima
+      - mima-release-*
       - release-*
     tags:
       - 'v*'
@@ -206,7 +207,7 @@ jobs:
   # Build all artifacts (binaries, images, Helm chart)
   build-artifacts:
     permissions:
-      contents: read
+      contents: write  # for creating the GitHub Release (cosign.pub)
       packages: write  # for pushing to ghcr.io
     runs-on: ubuntu-24.04
 
