@@ -17,6 +17,10 @@ permissions:
 env:
   COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_SIGNING_KEY }}
   COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+  # BuildPulse is Crossplane upstream's flaky-test dashboard; the mimacom fork has
+  # no BUILDPULSE_* secrets. Surfaced here so the e2e "Publish E2E Test Flakes"
+  # step can guard on it (buildpulse-action v3 hard-fails on missing auth).
+  BUILDPULSE_ACCESS_KEY_ID: ${{ secrets.BUILDPULSE_ACCESS_KEY_ID }}
 
 jobs:
   check-diff:
@@ -188,7 +192,8 @@ jobs:
               -labels area=${{ matrix.test-area }}
 
       - name: Publish E2E Test Flakes
-        if: '!cancelled()'
+        # Skip on the fork when BuildPulse creds are absent (see workflow env above).
+        if: ${{ !cancelled() && env.BUILDPULSE_ACCESS_KEY_ID != '' }}
         uses: buildpulse/buildpulse-action@76dbedc6585e8731b40a19da1ebc3f6609dbbb83 # v3
         with:
           account: 45158470
