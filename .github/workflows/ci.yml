@@ -294,7 +294,19 @@ jobs:
 
       - name: Push Images to GitHub Container Registry
         if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/')
-        run: nix run --option warn-dirty false .#push-images -- ghcr.io/${{ github.repository_owner }}/crossplane
+        # Retry to survive transient GHCR blips (e.g. `Get https://ghcr.io/v2/: EOF`).
+        # push-images is idempotent — already-pushed layers report "Layer already exists".
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if nix run --option warn-dirty false .#push-images -- ghcr.io/${{ github.repository_owner }}/crossplane; then
+              exit 0
+            fi
+            echo "::warning::push-images attempt ${attempt}/3 failed; retrying in 15s..."
+            sleep 15
+          done
+          echo "::error::push-images failed after 3 attempts"
+          exit 1
 
       # Push the Helm chart and capture the EXACT ref+digest helm published, so
       # the signing step below signs precisely what was pushed. helm derives the
@@ -305,7 +317,17 @@ jobs:
         if: github.ref == 'refs/heads/mima' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/')
         run: |
           set -euo pipefail
-          out="$(nix shell nixpkgs#kubernetes-helm -c helm push result/charts/crossplane-*.tgz oci://ghcr.io/${{ github.repository_owner }}/charts 2>&1)"
+          # Retry to survive transient GHCR blips; re-pushing the same chart is safe.
+          out=""
+          for attempt in 1 2 3; do
+            if out="$(nix shell nixpkgs#kubernetes-helm -c helm push result/charts/crossplane-*.tgz oci://ghcr.io/${{ github.repository_owner }}/charts 2>&1)"; then
+              break
+            fi
+            echo "::warning::helm push attempt ${attempt}/3 failed; retrying in 15s..."
+            out=""
+            sleep 15
+          done
+          if [ -z "$out" ]; then echo "::error::helm push failed after 3 attempts"; exit 1; fi
           echo "$out"
           pushed="$(printf '%s\n' "$out" | sed -n 's/^Pushed: //p' | head -1)"
           digest="$(printf '%s\n' "$out" | sed -n 's/^Digest: //p' | head -1)"
