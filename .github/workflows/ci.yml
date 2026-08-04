@@ -17,10 +17,6 @@ permissions:
 env:
   COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_SIGNING_KEY }}
   COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-  # BuildPulse is Crossplane upstream's flaky-test dashboard; the mimacom fork has
-  # no BUILDPULSE_* secrets. Surfaced here so the e2e "Publish E2E Test Flakes"
-  # step can guard on it (buildpulse-action v3 hard-fails on missing auth).
-  BUILDPULSE_ACCESS_KEY_ID: ${{ secrets.BUILDPULSE_ACCESS_KEY_ID }}
 
 jobs:
   check-diff:
@@ -28,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
@@ -47,7 +43,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
@@ -69,7 +65,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
@@ -84,19 +80,19 @@ jobs:
         uses: nicknovitski/nix-develop@9be7cfb4b10451d3390a75dc18ad0465bed4932a # v1
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4
+        uses: github/codeql-action/init@d1ba80a13dd99fba24a470575428917156a28b43 # v4
         with:
           languages: go
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4
+        uses: github/codeql-action/analyze@d1ba80a13dd99fba24a470575428917156a28b43 # v4
 
   unit-tests:
     runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
@@ -120,6 +116,11 @@ jobs:
   # E2E tests run outside the Nix sandbox (needs Docker)
   e2e-tests:
     runs-on: ubuntu-24.04
+    env:
+      # Resolved here because the secrets context isn't available in a
+      # step-level if. Empty on pull requests from forks, which don't receive
+      # secrets, and on forks of this repository.
+      BUILDPULSE_CONFIGURED: ${{ secrets.BUILDPULSE_ACCESS_KEY_ID != '' && secrets.BUILDPULSE_SECRET_ACCESS_KEY != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -149,7 +150,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
@@ -192,8 +193,7 @@ jobs:
               -labels area=${{ matrix.test-area }}
 
       - name: Publish E2E Test Flakes
-        # Skip on the fork when BuildPulse creds are absent (see workflow env above).
-        if: ${{ !cancelled() && env.BUILDPULSE_ACCESS_KEY_ID != '' }}
+        if: "!cancelled() && env.BUILDPULSE_CONFIGURED == 'true'"
         uses: buildpulse/buildpulse-action@76dbedc6585e8731b40a19da1ebc3f6609dbbb83 # v3
         with:
           account: 45158470
@@ -229,7 +229,7 @@ jobs:
           docker-images: false
 
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -399,7 +399,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Lint Protocol Buffers
         uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1
