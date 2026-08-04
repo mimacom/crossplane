@@ -75,11 +75,17 @@ jobs:
             fi
 
             if [ "${SIGN_CHART}" = "true" ]; then
-              echo "── Re-signing chart ${chart_repo}:${tag}"
-              if cosign sign --key env://COSIGN_PRIVATE_KEY --tlog-upload=false --yes "${chart_repo}:${tag}"; then
-                echo "✅ chart ${tag} signed"
+              # Helm publishes the OCI chart with a SemVer tag WITHOUT the leading
+              # 'v' (e.g. ghcr.io/<org>/charts/crossplane:2.3.0), so strip it.
+              chart_tag="${tag#v}"
+              if ! chart_digest="$(cosign triangulate --type digest "${chart_repo}:${chart_tag}" 2>/dev/null)"; then
+                chart_digest="${chart_repo}:${chart_tag}"
+              fi
+              echo "── Re-signing chart ${chart_repo}:${chart_tag} (${chart_digest})"
+              if cosign sign --key env://COSIGN_PRIVATE_KEY --tlog-upload=false --yes "${chart_digest}"; then
+                echo "✅ chart ${chart_tag} signed"
               else
-                echo "::error::failed to sign chart ${tag}"; fail=1
+                echo "::error::failed to sign chart ${chart_tag}"; fail=1
               fi
             fi
           done
