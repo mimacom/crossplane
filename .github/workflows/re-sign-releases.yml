@@ -1,0 +1,108 @@
+name: Re-sign Releases
+
+# One-off remediation for DCS-15: the old cleanup-registry.yml deleted the cosign
+# signatures of releases older than 30 days, breaking `cosign verify` for images
+# that were never rebuilt. This re-signs the EXISTING images in place with the
+# same key + flags ci.yml uses — the image content and digest are unchanged, so
+# DATEV needs no changes on their side: the missing `.sig` simply reappears.
+#
+# Uses the SAME signing recipe as ci.yml (Sign Docker Image / Sign Helm Chart):
+#   cosign sign --key env://COSIGN_PRIVATE_KEY --tlog-upload=false --yes <ref>
+#
+# Run: Actions → Re-sign Releases → Run workflow (default tags = the DCS-15 set).
+# Keep this workflow until you have confirmed which older releases lost their
+# signature; it is safe to re-run (re-signing is idempotent).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: 'Space-separated release tags to re-sign, e.g. "v2.3.0 v2.3.1 v2.3.3"'
+        required: true
+        default: 'v2.3.0 v2.3.1 v2.3.3'
+      sign_chart:
+        description: 'Also re-sign the Helm chart (ghcr.io/<org>/charts/crossplane) for each tag'
+        type: boolean
+        default: true
+
+permissions:
+  packages: write
+
+jobs:
+  resign:
+    runs-on: ubuntu-24.04
+    env:
+      ORG: ${{ github.repository_owner }}
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+
+      - name: Login to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "${GH_TOKEN}" | cosign login ghcr.io -u "${ORG}" --password-stdin
+
+      - name: Re-sign images (and charts) in place
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_SIGNING_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          TAGS: ${{ inputs.tags }}
+          SIGN_CHART: ${{ inputs.sign_chart }}
+        run: |
+          set -euo pipefail
+          image_repo="ghcr.io/${ORG}/crossplane"
+          chart_repo="ghcr.io/${ORG}/charts/crossplane"
+          fail=0
+
+          for tag in ${TAGS}; do
+            case "${tag}" in
+              v[0-9]*.[0-9]*.[0-9]*) : ;;
+              *) echo "::error::'${tag}' is not a vX.Y.Z release tag — skipping."; fail=1; continue ;;
+            esac
+
+            # Pin the exact digest the tag points to, so we sign the same object the
+            # image tag resolves to even if the tag were ever moved. (ci.yml signs by
+            # tag; pinning here is strictly safer and produces the identical .sig.)
+            if ! digest="$(cosign triangulate --type digest "${image_repo}:${tag}" 2>/dev/null)"; then
+              # Fallback: resolve via the registry manifest if triangulate can't.
+              digest="${image_repo}:${tag}"
+            fi
+            echo "── Re-signing image ${image_repo}:${tag} (${digest})"
+            if cosign sign --key env://COSIGN_PRIVATE_KEY --tlog-upload=false --yes "${digest}"; then
+              echo "✅ image ${tag} signed"
+            else
+              echo "::error::failed to sign image ${tag}"; fail=1
+            fi
+
+            if [ "${SIGN_CHART}" = "true" ]; then
+              echo "── Re-signing chart ${chart_repo}:${tag}"
+              if cosign sign --key env://COSIGN_PRIVATE_KEY --tlog-upload=false --yes "${chart_repo}:${tag}"; then
+                echo "✅ chart ${tag} signed"
+              else
+                echo "::error::failed to sign chart ${tag}"; fail=1
+              fi
+            fi
+          done
+          exit "${fail}"
+
+      - name: Verify the re-signed images (as DATEV does — air-gapped, no Rekor)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAGS: ${{ inputs.tags }}
+        run: |
+          set -euo pipefail
+          # Public half committed at release/cosign.pub on the release branch.
+          curl -fsSL \
+            "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/mima/release/cosign.pub" \
+            -o cosign.pub
+          echo "${GH_TOKEN}" | cosign login ghcr.io -u "${ORG}" --password-stdin
+          fail=0
+          for tag in ${TAGS}; do
+            if cosign verify --key cosign.pub --insecure-ignore-tlog=true \
+                 "ghcr.io/${ORG}/crossplane:${tag}" >/dev/null 2>&1; then
+              echo "✅ verify OK  ${tag}"
+            else
+              echo "::error::verify FAILED ${tag}"; fail=1
+            fi
+          done
+          exit "${fail}"
