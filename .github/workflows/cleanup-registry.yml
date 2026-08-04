@@ -39,25 +39,56 @@ jobs:
             done
           done
 
-      - name: Cleanup cosign signatures (older than 30 days)
-        # .sig entries accumulate on every push to mima/release-* branches.
-        # 30-day window keeps signatures for recent releases while cleaning branch-build sigs.
+      # ── Cleanup cosign signatures ────────────────────────────────────────────
+      # A cosign signature is stored as an OCI artifact tagged `sha256-<digest>.sig`
+      # where <digest> is the digest of the object it signs. Deleting it by AGE
+      # alone (the previous behaviour) permanently breaks `cosign verify` for any
+      # RELEASE older than the window — which is exactly DATEV's air-gapped
+      # long-lived verification use case, and caused the DCS-15 incident.
+      #
+      # Correct rule: NEVER delete a signature that belongs to a release image.
+      # We build the set of protected digests from every version that still carries
+      # a clean release tag (vX.Y.Z, optional -mima.N, optional arch suffix), then
+      # delete ONLY signatures whose signed digest is NOT in that set (i.e. leftover
+      # branch/commit-build signatures, whose images the step above already pruned).
+      # A 7-day age guard mirrors the image window so we never race a fresh push.
+      - name: Cleanup orphaned cosign signatures (branch/commit builds only)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           NOW=$(date -u +%s)
-          MAX_AGE=2592000  # 30 days in seconds
+          MAX_AGE=604800  # 7 days in seconds
+
+          RELEASE_RE='^v[0-9]+\.[0-9]+\.[0-9]+(-mima\.[0-9]+)?(-(amd64|arm64|arm|ppc64le))?$'
+          SIG_RE='^sha256-[a-f0-9]+\.sig$'
 
           for PKG in crossplane charts%2Fcrossplane; do
-            echo "Scanning $PKG for cosign signatures older than 30 days..."
-            gh api --paginate "/orgs/${ORG}/packages/container/${PKG}/versions" 2>/dev/null | \
-            jq -r --argjson now "$NOW" --argjson max_age "$MAX_AGE" '
-              .[] | select(
-                (.created_at | fromdateiso8601) < ($now - $max_age) and
-                (.metadata.container.tags | any(test("^sha256-[a-f0-9]+\\.sig$")))
-              ) | .id | tostring
+            echo "Scanning $PKG for orphaned (non-release) cosign signatures..."
+            versions="$(gh api --paginate "/orgs/${ORG}/packages/container/${PKG}/versions" 2>/dev/null | jq -s 'add')"
+
+            # Digests protected because they still carry a release tag. `.name` is
+            # the manifest digest (sha256:...); strip the prefix to compare against
+            # the hex embedded in a `sha256-<hex>.sig` tag.
+            protected="$(printf '%s' "$versions" | jq -r --arg re "$RELEASE_RE" '
+              .[] | select(.metadata.container.tags | any(test($re)))
+              | .name | sub("^sha256:";"")
+            ' | jq -R . | jq -s .)"
+
+            # A signature is deletable iff: it is a .sig, older than the guard, AND
+            # the digest it signs is NOT protected by a live release tag.
+            printf '%s' "$versions" | jq -r \
+              --argjson now "$NOW" --argjson max_age "$MAX_AGE" \
+              --arg sig "$SIG_RE" --argjson protected "$protected" '
+              .[]
+              | select(.metadata.container.tags | any(test($sig)))
+              | select((.created_at | fromdateiso8601) < ($now - $max_age))
+              | . as $v
+              | ($v.metadata.container.tags[] | select(test($sig))
+                 | capture("^sha256-(?<h>[a-f0-9]+)\\.sig$").h) as $h
+              | select(($protected | index($h)) | not)
+              | $v.id | tostring
             ' | while read -r id; do
-              echo "Deleting version $id from $PKG (cosign signature, expired)"
+              echo "Deleting version $id from $PKG (orphaned branch/commit signature)"
               gh api -X DELETE "/orgs/${ORG}/packages/container/${PKG}/versions/${id}"
             done
           done
