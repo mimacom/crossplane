@@ -29,6 +29,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/spf13/afero"
 	corev1 "k8s.io/api/core/v1"
+	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kmeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/discovery"
@@ -51,6 +52,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/event"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/feature"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/customresourcesgate"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource/unstructured"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/xpkg"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/xpkg/parser"
@@ -139,6 +141,7 @@ type startCommand struct {
 	EnableProviderDeletionProtection  bool `group:"Alpha Features:" help:"Enable automatic protection of Providers from deletion when they have active managed resources. Requires --enable-usages."`
 	EnablePipelineOCIReferences       bool `group:"Alpha Features:" help:"Enable support for referencing functions by OCI reference in Composition and Operation pipelines."`
 	EnableCompositionRevisionGC       bool `group:"Alpha Features:" help:"Enable garbage collection of unused CompositionRevisions."`
+	EnableFunctionControlledDeletion  bool `group:"Alpha Features:" help:"Enable support for Composition deletion policies (Background, Foreground, Pipeline), which control how a Composition's XRs are deleted."`
 
 	XfnCacheDir             string        `default:"/cache/xfn"                         env:"XFN_CACHE_DIR"             group:"Alpha Features:" help:"Directory used for caching function responses. Requires --enable-function-response-cache."`
 	XfnCacheMaxTTL          time.Duration `default:"24h"                                env:"XFN_CACHE_MAX_TTL"         group:"Alpha Features:" help:"Maximum TTL for cached function responses. Set to 0 to disable. Requires --enable-function-response-cache."`
@@ -370,6 +373,11 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 		log.Info("Alpha feature enabled", "flag", features.EnableAlphaCompositionRevisionGC)
 	}
 
+	if c.EnableFunctionControlledDeletion {
+		o.Features.Enable(features.EnableAlphaFunctionControlledDeletion)
+		log.Info("Alpha feature enabled", "flag", features.EnableAlphaFunctionControlledDeletion)
+	}
+
 	cacheOptionsAPIExt := cache.Options{
 		HTTPClient: mgr.GetHTTPClient(),
 		Scheme:     mgr.GetScheme(),
@@ -387,6 +395,18 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 				return
 			}
 			log.Debug("Watch error - probably due to CRD being uninstalled", "error", err)
+		},
+
+		// Strip the OpenAPI schemas (most of CRDs' size) from typed CRDs in this cache.
+		// Typed CRD readers, like the informer GC and the OpenAPI discovery cache invalidation,
+		// only need names and versions.
+		//
+		// Required resources and composed resources are read as unstructured,
+		// from a separate unstructured informer.
+		// The transform only strips typed CRDs, so a function that requires a
+		// CRD still gets its schemas.
+		ByObject: map[client.Object]cache.ByObject{
+			&extv1.CustomResourceDefinition{}: {Transform: customresourcesgate.TransformStripCRDSchema},
 		},
 	}
 
