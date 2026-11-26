@@ -18,9 +18,7 @@
   // The branches renovate should target
   // PLEASE UPDATE THIS WHEN RELEASING.
   baseBranches: [
-    'mima',
-    'release-1.20',
-    'release-2.2',
+    'main',
     'release-2.3',
     'release-2.4',
     'release-2.5',
