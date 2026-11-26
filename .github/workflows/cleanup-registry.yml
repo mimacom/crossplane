@@ -16,7 +16,10 @@ jobs:
     steps:
       - name: Cleanup branch/commit images (older than 7 days)
         # Matches: v2.2.0-107.g0823b0620, v2.2.0-107.g0823b0620-amd64, etc.
-        # Skips clean release tags: v2.2.0, v2.2.0-amd64, v2.2.0-arm64, etc.
+        # Skips clean release tags: v2.2.0, v2.2.0-1, v2.2.0-amd64, v2.2.0-arm64.
+        # The leading `v` is optional: the Helm chart package (charts/crossplane)
+        # tags WITHOUT it (helm strips it), e.g. `2.5.0` and `2.2.0-107.g0823b06`.
+        # Requiring `^v` made this step inert for the chart package.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -30,8 +33,8 @@ jobs:
               .[] | select(
                 (.created_at | fromdateiso8601) < ($now - $max_age) and
                 (.metadata.container.tags | length > 0) and
-                (.metadata.container.tags | any(test("^v[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]+\\.g[0-9a-f]+"))) and
-                (.metadata.container.tags | all(test("^v[0-9]+\\.[0-9]+\\.[0-9]+(-(?:amd64|arm64|arm|ppc64le))?$") | not))
+                (.metadata.container.tags | any(test("^v?[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]+\\.g[0-9a-f]+"))) and
+                (.metadata.container.tags | all(test("^v?[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9]+)?(-(?:amd64|arm64|arm|ppc64le))?$") | not))
               ) | .id | tostring
             ' | while read -r id; do
               echo "Deleting version $id from $PKG (branch/commit build, expired)"
@@ -46,11 +49,11 @@ jobs:
       # RELEASE older than the window — which is exactly DATEV's air-gapped
       # long-lived verification use case, and caused the DCS-15 incident.
       #
-      # Correct rule: NEVER delete a signature that belongs to a release image.
+      # Correct rule: NEVER delete a signature whose subject is still reachable.
       # We build the set of protected digests from every version that still carries
-      # a clean release tag (vX.Y.Z, optional -mima.N, optional arch suffix), then
-      # delete ONLY signatures whose signed digest is NOT in that set (i.e. leftover
-      # branch/commit-build signatures, whose images the step above already pruned).
+      # at least one non-signature tag, then delete ONLY signatures whose signed
+      # digest is NOT in that set (i.e. leftover branch/commit-build signatures,
+      # whose images the step above already pruned).
       # A 7-day age guard mirrors the image window so we never race a fresh push.
       - name: Cleanup orphaned cosign signatures (branch/commit builds only)
         env:
@@ -59,18 +62,30 @@ jobs:
           NOW=$(date -u +%s)
           MAX_AGE=604800  # 7 days in seconds
 
-          RELEASE_RE='^v[0-9]+\.[0-9]+\.[0-9]+(-mima\.[0-9]+)?(-(amd64|arm64|arm|ppc64le))?$'
           SIG_RE='^sha256-[a-f0-9]+\.sig$'
 
           for PKG in crossplane charts%2Fcrossplane; do
             echo "Scanning $PKG for orphaned (non-release) cosign signatures..."
             versions="$(gh api --paginate "/orgs/${ORG}/packages/container/${PKG}/versions" 2>/dev/null | jq -s 'add')"
 
-            # Digests protected because they still carry a release tag. `.name` is
+            # Digests protected because they are still REACHABLE: the manifest
+            # carries at least one tag that is not itself a signature. `.name` is
             # the manifest digest (sha256:...); strip the prefix to compare against
             # the hex embedded in a `sha256-<hex>.sig` tag.
-            protected="$(printf '%s' "$versions" | jq -r --arg re "$RELEASE_RE" '
-              .[] | select(.metadata.container.tags | any(test($re)))
+            #
+            # This is an allowlist of what may be DELETED, not of what must be
+            # KEPT. The previous rule protected only tags matching a hardcoded
+            # release shape, so any tag the regex did not anticipate lost its
+            # signature 7 days later. It missed two real cases:
+            #   - the chart package, whose tags have no leading `v` (`2.5.0`),
+            #     which made `protected` empty for every chart release; and
+            #   - security rebuild tags `vX.Y.Z-N` (see crossplane-gitops
+            #     release-fork.yml), which did not exist when it was written.
+            # Reachability needs no such list and cannot go stale.
+            protected="$(printf '%s' "$versions" | jq -r --arg sig "$SIG_RE" '
+              .[]
+              | select(.metadata.container.tags | length > 0)
+              | select(.metadata.container.tags | any(test($sig)) | not)
               | .name | sub("^sha256:";"")
             ' | jq -R . | jq -s .)"
 
